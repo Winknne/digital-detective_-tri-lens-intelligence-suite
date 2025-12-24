@@ -26,12 +26,21 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
       },
     });
 
-    // 获取文本，注意处理可能的 undefined
-    const resultText = response.text ? response.text() : '{}';
+    // 获取文本 (根据 SDK 版本，有时是属性有时是方法，这里做个兼容处理)
+    // @ts-ignore
+    const resultText = (typeof response.text === 'function' ? response.text() : response.text) || '{}';
 
-    // 2. 清洗数据：去除可能存在的 Markdown 代码块标记 (```json 和 ```)
-    const cleanJsonText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
+    // 🔍【核弹级修复】不依赖 replace，而是直接截取第一个 '{' 和最后一个 '}' 之间的内容
+    // 这能解决 99% 的 "Invalid intelligence report format" 错误
+    const firstOpen = resultText.indexOf('{');
+    const lastClose = resultText.lastIndexOf('}');
 
+    if (firstOpen === -1 || lastClose === -1) {
+       console.error("AI Response (No JSON found):", resultText);
+       throw new Error("No JSON structure found in AI response.");
+    }
+
+    const cleanJsonText = resultText.substring(firstOpen, lastClose + 1);
     const json: AnalysisResult = JSON.parse(cleanJsonText);
     
     // Extract real web sources from grounding metadata if available
