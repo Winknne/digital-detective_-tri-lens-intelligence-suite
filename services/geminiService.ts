@@ -13,7 +13,7 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
   const ai = getAI();
   
   // 1. 修改模型名称为当前可用的稳定版本 (推荐 gemini-1.5-flash 或 gemini-2.0-flash)
-  const modelName = "gemini-1.5-flash"; 
+  const modelName = "gemini-2.0-flash"; 
 
   try {
     const response = await ai.models.generateContent({
@@ -66,7 +66,7 @@ export const getSuspectResponse = async (systemInstruction: string, history: Mes
   const ai = getAI();
   // 3. 同样修改这里的模型名称
   const chat = ai.chats.create({
-    model: 'gemini-1.5-flash', 
+    model: 'gemini-2.0-flash', 
     config: { systemInstruction },
     history: history.map(m => ({
       role: m.role,
