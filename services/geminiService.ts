@@ -7,20 +7,21 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 /**
  * 辅助函数：从混合文本中提取第一个有效的 JSON 对象字符串
+ * 这能防止 AI 在 JSON 前后输出 "Here is the analysis:" 之类的废话导致解析失败
  */
 function extractJSON(text: string): string {
   try {
-    // 1. 尝试直接解析，如果成功则直接返回
+    // 1. 尝试直接解析
     JSON.parse(text);
     return text;
   } catch (e) {
     // 2. 如果直接解析失败，使用正则寻找最外层的 {}
-    // 匹配第一个 { 开始，到最后一个 } 结束的内容（包括换行符）
+    // 匹配第一个 { 开始，到最后一个 } 结束的内容
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return jsonMatch[0];
     }
-    // 3. 如果找不到 {}，抛出原始文本以便调试
+    // 3. 找不到则抛出错误
     throw new Error("No JSON object found in response");
   }
 }
@@ -32,7 +33,7 @@ function extractJSON(text: string): string {
 export const analyzeNarrative = async (text: string): Promise<AnalysisResult> => {
   const ai = getAI();
   
-  // 使用目前最稳定的模型
+  // [修改点] 这里已更新为您指定的 gemini-2.0-flash
   const modelName = "gemini-2.0-flash"; 
 
   try {
@@ -46,9 +47,11 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
       },
     });
 
-    const resultText = response.text ? response.text() : '{}';
+    // [核心修复] 注意这里移除了括号，直接访问 text 属性
+    // 如果 SDK 返回 undefined，兜底为 '{}'
+    const resultText = response.text || '{}';
     
-    // [核心修复] 使用更稳健的提取逻辑
+    // 清洗和提取 JSON
     const cleanJsonText = extractJSON(resultText);
 
     const json: AnalysisResult = JSON.parse(cleanJsonText);
@@ -67,7 +70,7 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
     return json;
   } catch (e) {
     console.error("AI Analysis Failed. Error:", e);
-    // 只有在开发环境才抛出详细错误，生产环境给通用提示
+    // 抛出通用错误供前端展示
     throw new Error("Invalid intelligence report format.");
   }
 };
@@ -75,7 +78,7 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
 export const getSuspectResponse = async (systemInstruction: string, history: Message[], message: string): Promise<string> => {
   const ai = getAI();
   const chat = ai.chats.create({
-    model: 'gemini-2.0-flash', 
+    model: 'gemini-2.0-flash', // [修改点] 保持模型一致
     config: { systemInstruction },
     history: history.map(m => ({
       role: m.role,
@@ -83,6 +86,7 @@ export const getSuspectResponse = async (systemInstruction: string, history: Mes
     }))
   });
   const response = await chat.sendMessage({ message });
+  // [核心修复] 这里同样改为直接访问属性
   return response.text || '';
 };
 
