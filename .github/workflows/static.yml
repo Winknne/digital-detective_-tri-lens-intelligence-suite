@@ -28,16 +28,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          # 注意：下面这行已经被我删掉了
+          # cache: 'npm' 
 
       - name: Install dependencies
-        # 注意：这里必须是 npm install，不能是 npm ci
-        # npm install 会自动生成缺少的 lock 文件，从而避免报错
         run: npm install
 
       - name: Build
         run: npm run build
         env:
-          # 确保您已经在仓库 Settings 里配置了这个 Secret
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Setup Pages
@@ -46,15 +45,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # 确保上传的是构建后的 dist 目录
           path: './dist'
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4        uses: actions/upload-pages-artifact@v3
-        with:
-          # Upload entire repository
-          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
