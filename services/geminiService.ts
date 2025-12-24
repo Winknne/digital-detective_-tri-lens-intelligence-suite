@@ -6,24 +6,58 @@ import { AnalysisResult, Message } from "../types";
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 /**
- * 辅助函数：从混合文本中提取第一个有效的 JSON 对象字符串
- * 这能防止 AI 在 JSON 前后输出 "Here is the analysis:" 之类的废话导致解析失败
+ * [核心修复] 智能 JSON 提取器
+ * 使用堆栈计数法，精确截取第一个完整的 JSON 对象，忽略前后任何废话。
+ * 解决了正则匹配无法处理结尾包含 "}" 的文本的问题。
  */
 function extractJSON(text: string): string {
-  try {
-    // 1. 尝试直接解析
-    JSON.parse(text);
-    return text;
-  } catch (e) {
-    // 2. 如果直接解析失败，使用正则寻找最外层的 {}
-    // 匹配第一个 { 开始，到最后一个 } 结束的内容
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return jsonMatch[0];
-    }
-    // 3. 找不到则抛出错误
+  // 1. 找到第一个 "{"
+  const firstOpen = text.indexOf('{');
+  if (firstOpen === -1) {
     throw new Error("No JSON object found in response");
   }
+
+  // 2. 开始遍历，寻找匹配的闭合 "}"
+  let balance = 0;
+  let inString = false;
+  let isEscaped = false;
+
+  for (let i = firstOpen; i < text.length; i++) {
+    const char = text[i];
+
+    // 处理转义字符 (例如 \")
+    if (isEscaped) {
+      isEscaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      isEscaped = true;
+      continue;
+    }
+
+    // 处理字符串状态 (在字符串内的 {} 不计入层级)
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    // 如果不在字符串内，计算大括号层级
+    if (!inString) {
+      if (char === '{') {
+        balance++;
+      } else if (char === '}') {
+        balance--;
+        // 当层级归零时，说明找到了最外层的闭合括号
+        if (balance === 0) {
+          return text.substring(firstOpen, i + 1);
+        }
+      }
+    }
+  }
+
+  // 如果循环结束还没归零，说明 JSON 不完整，但在这种情况下我们
+  // 仍然尝试返回正则匹配作为兜底，或者直接抛出
+  throw new Error("Invalid JSON: Unbalanced braces");
 }
 
 /**
@@ -33,7 +67,7 @@ function extractJSON(text: string): string {
 export const analyzeNarrative = async (text: string): Promise<AnalysisResult> => {
   const ai = getAI();
   
-  // [修改点] 这里已更新为您指定的 gemini-2.0-flash
+  // 保持使用 gemini-2.0-flash
   const modelName = "gemini-2.0-flash"; 
 
   try {
@@ -47,11 +81,10 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
       },
     });
 
-    // [核心修复] 注意这里移除了括号，直接访问 text 属性
-    // 如果 SDK 返回 undefined，兜底为 '{}'
+    // 获取文本
     const resultText = response.text || '{}';
     
-    // 清洗和提取 JSON
+    // [使用新的提取器]
     const cleanJsonText = extractJSON(resultText);
 
     const json: AnalysisResult = JSON.parse(cleanJsonText);
@@ -70,7 +103,8 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
     return json;
   } catch (e) {
     console.error("AI Analysis Failed. Error:", e);
-    // 抛出通用错误供前端展示
+    // 调试技巧：如果再次失败，您可以在控制台看到这行被截取后的 JSON
+    // console.log("Extracted JSON was:", cleanJsonText); 
     throw new Error("Invalid intelligence report format.");
   }
 };
@@ -78,7 +112,7 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
 export const getSuspectResponse = async (systemInstruction: string, history: Message[], message: string): Promise<string> => {
   const ai = getAI();
   const chat = ai.chats.create({
-    model: 'gemini-2.0-flash', // [修改点] 保持模型一致
+    model: 'gemini-2.0-flash', 
     config: { systemInstruction },
     history: history.map(m => ({
       role: m.role,
@@ -86,7 +120,6 @@ export const getSuspectResponse = async (systemInstruction: string, history: Mes
     }))
   });
   const response = await chat.sendMessage({ message });
-  // [核心修复] 这里同样改为直接访问属性
   return response.text || '';
 };
 
@@ -100,29 +133,4 @@ export const decodeBase64 = (base64: string): Uint8Array => {
   return bytes;
 };
 
-export const encodeBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-};
-
-export async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
+export const encodeBase64 = (bytes: Uint8Array):
