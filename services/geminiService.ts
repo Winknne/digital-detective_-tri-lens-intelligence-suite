@@ -1,8 +1,8 @@
-
 import { GoogleGenAI, Modality, Chat, GenerateContentResponse } from "@google/genai";
 import { ANALYSIS_SYSTEM_PROMPT } from "../constants";
 import { AnalysisResult, Message } from "../types";
 
+// 确保您的 API KEY 环境变量名称正确
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 /**
@@ -11,21 +11,28 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY as string });
  */
 export const analyzeNarrative = async (text: string): Promise<AnalysisResult> => {
   const ai = getAI();
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: text,
-    config: {
-      systemInstruction: ANALYSIS_SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      tools: [{ googleSearch: {} }],
-    },
-  });
+  
+  // 1. 修改模型名称为当前可用的稳定版本 (推荐 gemini-1.5-flash 或 gemini-2.0-flash)
+  const modelName = "gemini-1.5-flash"; 
 
-  const resultText = response.text || '{}';
   try {
-    // 清洗 Markdown 标记，防止 JSON.parse 报错
-    const cleanText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const json: AnalysisResult = JSON.parse(cleanText);
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: text,
+      config: {
+        systemInstruction: ANALYSIS_SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    // 获取文本，注意处理可能的 undefined
+    const resultText = response.text ? response.text() : '{}';
+
+    // 2. 清洗数据：去除可能存在的 Markdown 代码块标记 (```json 和 ```)
+    const cleanJsonText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    const json: AnalysisResult = JSON.parse(cleanJsonText);
     
     // Extract real web sources from grounding metadata if available
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -40,15 +47,17 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
     
     return json;
   } catch (e) {
-    console.error("Failed to parse AI response:", resultText);
+    // 在控制台打印详细错误，方便调试
+    console.error("AI Analysis Failed. Detail:", e);
     throw new Error("Invalid intelligence report format.");
   }
 };
 
 export const getSuspectResponse = async (systemInstruction: string, history: Message[], message: string): Promise<string> => {
   const ai = getAI();
+  // 3. 同样修改这里的模型名称
   const chat = ai.chats.create({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-1.5-flash', 
     config: { systemInstruction },
     history: history.map(m => ({
       role: m.role,
