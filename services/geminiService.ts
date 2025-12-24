@@ -23,7 +23,9 @@ export const analyzeNarrative = async (text: string): Promise<AnalysisResult> =>
 
   const resultText = response.text || '{}';
   try {
-    const json: AnalysisResult = JSON.parse(resultText);
+    // 清洗 Markdown 标记，防止 JSON.parse 报错
+    const cleanText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const json: AnalysisResult = JSON.parse(cleanText);
     
     // Extract real web sources from grounding metadata if available
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
